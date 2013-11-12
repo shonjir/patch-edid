@@ -6,18 +6,31 @@ require 'base64'
 
 data=`ioreg -l -d0 -w 0 -r -c AppleDisplay`
 
-edid_hex=data.match(/IODisplayEDID.*?<([a-z0-9]+)>/i)[1]
-vendorid=data.match(/DisplayVendorID.*?([0-9]+)/i)[1].to_i
-productid=data.match(/DisplayProductID.*?([0-9]+)/i)[1].to_i
+edids=data.scan(/IODisplayEDID.*?<([a-z0-9]+)>/i).flatten
+vendorids=data.scan(/DisplayVendorID.*?([0-9]+)/i).flatten
+productids=data.scan(/DisplayProductID.*?([0-9]+)/i).flatten
+
+displays = []
+edids.each_with_index do |edid, i|
+    disp = { "edid_hex"=>edid, "vendorid"=>vendorids[i].to_i, "productid"=>productids[i].to_i }
+    displays.push(disp)
+end
+
+# Process all displays
+if displays.length > 1
+    puts "Found %d displays!  You should only install the override file for the one which" % displays.length
+    puts "is giving you problems.","\n"
+end
+displays.each do |disp|
 # Retrieve monitor model from EDID data
-monitor_name=[edid_hex.match(/000000fc00(.*?)0a/){|m|m[1]}].pack("H*")
+monitor_name=[disp["edid_hex"].match(/000000fc00(.*?)0a/){|m|m[1]}].pack("H*")
 if monitor_name.empty?
     monitor_name = "Display"
 end
 
-puts "found display '#{monitor_name}': vendorid #{vendorid}, productid #{productid}, EDID:\n#{edid_hex}"
+puts "found display '#{monitor_name}': vendorid #{disp["vendorid"]}, productid #{disp["productid"]}, EDID:\n#{disp["edid_hex"]}"
 
-bytes=edid_hex.scan(/../).map{|x|Integer("0x#{x}")}.flatten
+bytes=disp["edid_hex"].scan(/../).map{|x|Integer("0x#{x}")}.flatten
 
 puts "Setting color support to RGB 4:4:4 only"
 bytes[24] &= ~(0b11000)
@@ -32,8 +45,8 @@ puts
 puts "Recalculated checksum: 0x%x" % bytes[127]
 puts "new EDID:\n#{bytes.map{|b|"%02X"%b}.join}"
 
-Dir.mkdir("DisplayVendorID-%x" % vendorid) rescue nil
-f = File.open("DisplayVendorID-%x/DisplayProductID-%x" % [vendorid, productid], 'w')
+Dir.mkdir("DisplayVendorID-%x" % disp["vendorid"]) rescue nil
+f = File.open("DisplayVendorID-%x/DisplayProductID-%x" % [disp["vendorid"], disp["productid"]], 'w')
 f.write '<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">'
@@ -44,9 +57,11 @@ f.write "
   <key>IODisplayEDID</key>
   <data>#{Base64.encode64(bytes.pack('C*'))}</data>
   <key>DisplayVendorID</key>
-  <integer>#{vendorid}</integer>
+  <integer>#{disp["vendorid"]}</integer>
   <key>DisplayProductID</key>
-  <integer>#{productid}</integer>
+  <integer>#{disp["productid"]}</integer>
 </dict>
 </plist>"
 f.close
+puts "\n"
+end		# displays.each
