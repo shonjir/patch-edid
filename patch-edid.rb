@@ -6,11 +6,16 @@ require 'base64'
 
 data=`ioreg -l -d0 -w 0 -r -c AppleDisplay`
 
-puts edid_hex=data.match(/IODisplayEDID.*?<([a-z0-9]+)>/i)[1]
+edid_hex=data.match(/IODisplayEDID.*?<([a-z0-9]+)>/i)[1]
 vendorid=data.match(/DisplayVendorID.*?([0-9]+)/i)[1].to_i
 productid=data.match(/DisplayProductID.*?([0-9]+)/i)[1].to_i
+# Retrieve monitor model from EDID data
+monitor_name=[edid_hex.match(/000000fc00(.*?)0a/){|m|m[1]}].pack("H*")
+if monitor_name.empty?
+    monitor_name = "Display"
+end
 
-puts "found display: vendorid #{vendorid}, productid #{productid}, EDID:\n#{edid_hex}"
+puts "found display '#{monitor_name}': vendorid #{vendorid}, productid #{productid}, EDID:\n#{edid_hex}"
 
 bytes=edid_hex.scan(/../).map{|x|Integer("0x#{x}")}.flatten
 
@@ -35,7 +40,7 @@ f.write '<?xml version="1.0" encoding="UTF-8"?>
 f.write "
 <dict>
   <key>DisplayProductName</key>
-  <string>Display with forced RGB mode (EDID override)</string>
+  <string>#{monitor_name} - forced RGB mode (EDID override)</string>
   <key>IODisplayEDID</key>
   <data>#{Base64.encode64(bytes.pack('C*'))}</data>
   <key>DisplayVendorID</key>
