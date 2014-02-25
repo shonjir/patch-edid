@@ -23,7 +23,7 @@ if displays.length > 1
 end
 displays.each do |disp|
 # Retrieve monitor model from EDID data
-monitor_name=[disp["edid_hex"].match(/000000fc00(.*?)0a/){|m|m[1]}].pack("H*")
+monitor_name=[disp["edid_hex"].match(/000000fc00(.*?)0a/){|m|m[1]}.to_s].pack("H*")
 if monitor_name.empty?
     monitor_name = "Display"
 end
