@@ -86,23 +86,39 @@ displays.each do |disp|
   puts
   puts "New EDID:\n#{bytes.map{|b|"%02X"%b}.join}"
 
+  def plist_key_value( sp, key, type, value )
+    str =  "#{sp}<key>#{key.to_s}</key>\n"
+    str += "#{sp}<#{type}>#{value.to_s}</#{type}>"
+    return str
+  end
+
+  # Write an edid patch stanza
+  def plist_edid_patch( sp, offset, bytes )
+    str = "#{sp}<dict>\n"
+    str += plist_key_value( sp + '  ', "offset", "integer", offset ) + "\n"
+    str += plist_key_value( sp + '  ', "data", "data", Base64.strict_encode64( bytes.pack('C*') ).to_s ) + "\n"
+    str += "#{sp}</dict>"
+    return str
+  end
+
   Dir.mkdir("DisplayVendorID-%x" % disp["vendorid"]) rescue nil
   f = File.open("DisplayVendorID-%x/DisplayProductID-%x" % [disp["vendorid"], disp["productid"]], 'w')
-  f.write '<?xml version="1.0" encoding="UTF-8"?>
+  #plist_key_value( f, sp, "IODisplayEDID", "data", Base64.strict_encode64( bytes.pack('C*') ).to_s )
+  f.write <<-PLIST
+<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">'
-  f.write "
+<plist version="1.0">
 <dict>
-  <key>DisplayProductName</key>
-  <string>#{monitor_name} - forced RGB mode (EDID override)</string>
-  <key>IODisplayEDID</key>
-  <data>#{Base64.encode64(bytes.pack('C*'))}</data>
-  <key>DisplayVendorID</key>
-  <integer>#{disp["vendorid"]}</integer>
-  <key>DisplayProductID</key>
-  <integer>#{disp["productid"]}</integer>
+#{ plist_key_value( '  ', "DisplayVendorID", "integer", disp["vendorid"] ) }
+#{ plist_key_value( '  ', "DisplayProductID", "integer", disp["productid"] ) }
+#{ plist_key_value( '  ', "DisplayProductName", "string", "#{monitor_name} (RGB 4:4:4)" ) }
+  <key>edid-patches</key>
+    <array>
+#{ plist_edid_patch( '      ', 24, bytes[24..24] ) }
+    </array>
 </dict>
-</plist>"
+</plist>
+PLIST
   f.close
   puts "\n"
 
