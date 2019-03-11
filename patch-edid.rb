@@ -1,6 +1,16 @@
 #!/usr/bin/ruby
 # Create display override file to force Mac OS X to use RGB mode for Display
-# see http://embdev.net/topic/284710
+# see https://embdev.net/topic/284710#3027030
+#
+# Originally created by Andreas Schwarz
+#
+# modified by A. Daugherity
+#   see https://gist.github.com/adaugherity/7435890
+# modified by J. Silva
+#   see https://github.com/shonjir/patch-edid
+#
+# EDID 1.4 format:
+#   https://en.wikipedia.org/wiki/Extended_Display_Identification_Data#EDID_1.4_data_format
 
 require 'base64'
 
@@ -22,28 +32,59 @@ if displays.length > 1
     puts "is giving you problems.","\n"
 end
 displays.each do |disp|
+
+# Translate EDID to byte array
+bytes=disp["edid_hex"].scan(/../).map{|x|Integer("0x#{x}")}.flatten
+
 # Retrieve monitor model from EDID data
-monitor_name=[disp["edid_hex"].match(/000000fc00(.*?)0a/){|m|m[1]}.to_s].pack("H*")
+monitor_name=[disp["edid_hex"].match(/000000fc00((?:(?!0a)[0-9a-f][0-9a-f]){1,13})/){|m|m[1]}.to_s].pack("H*")
 if monitor_name.empty?
     monitor_name = "Display"
 end
 
-puts "found display '#{monitor_name}': vendorid #{disp["vendorid"]}, productid #{disp["productid"]}, EDID:\n#{disp["edid_hex"]}"
+# Show some info
+puts "Found display '#{monitor_name}': vendorid #{disp["vendorid"]}, productid #{disp["productid"]}"
+puts "Original EDID:\n#{disp["edid_hex"]}"
+puts
+puts "EDID version #{bytes[18]}.#{bytes[19]}"
 
-bytes=disp["edid_hex"].scan(/../).map{|x|Integer("0x#{x}")}.flatten
+puts "Features:"
+digital_display = (bytes[20] & (0x80))>>7
+color_format = (bytes[24] & (0b11000))>>3
+digital_formats = ["RGB 4:4:4", "RGB 4:4:4 + YCrCb 4:4:4", "RGB 4:4:4 + YCrCb 4:2:2", "RGB 4:4:4 + YCrCb 4:4:4 + YCrCb 4:2:2"]
+analog_formats = ["Monochrome or Grayscale", "RGB Color", "Non-RGB Color", "Undefined"]
+if (digital_display)
+  puts "  Digital Display (#{digital_formats[color_format]})"
+else
+  puts "  Analog Display (#{analog_formats[color_format]})"
+end
+if bytes[24] & (0b10000000)
+  puts "  DPMS standby"
+end
+if bytes[24] & (0b01000000)
+  puts "  DPMS suspend"
+end
+if bytes[24] & (0b00100000)
+  puts "  DPMS active-off"
+end
+if bytes[24] & (0b00000100)
+  puts "  Standard sRGB color space"
+end
+puts "Number of extension blocks: #{bytes[126]}"
 
 puts "Setting color support to RGB 4:4:4 only"
 bytes[24] &= ~(0b11000)
 
-puts "Number of extension blocks: #{bytes[126]}"
-puts "removing extension block"
-bytes = bytes[0..127]
-bytes[126] = 0
+# Optional - remove extension block(s)
+#puts "removing extension block"
+#bytes = bytes[0..127]
+#bytes[126] = 0
 
+# Recalculate EDID checksum
 bytes[127] = (0x100-(bytes[0..126].reduce(:+) % 256)) % 256
-puts
 puts "Recalculated checksum: 0x%x" % bytes[127]
-puts "new EDID:\n#{bytes.map{|b|"%02X"%b}.join}"
+puts
+puts "New EDID:\n#{bytes.map{|b|"%02X"%b}.join}"
 
 Dir.mkdir("DisplayVendorID-%x" % disp["vendorid"]) rescue nil
 f = File.open("DisplayVendorID-%x/DisplayProductID-%x" % [disp["vendorid"], disp["productid"]], 'w')
@@ -64,4 +105,5 @@ f.write "
 </plist>"
 f.close
 puts "\n"
-end		# displays.each
+end   # displays.each
+
