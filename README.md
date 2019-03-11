@@ -16,11 +16,12 @@ It will generate a patchfile for each connected external display.  No special ri
 
 Your system disk will be mounted under /Volumes/ (e.g. “/Volumes/Macintosh HD/”).  All your files are accessible here and you have write permissions to the “Overrides” folder. 
 
-3.) Open a terminal and copy the DisplayVendor-directory from your users folder. Remember that every path is now prefixed by “/Volumes/Macintosh HD/”.
+4.) Open a terminal and copy the DisplayVendor-directory from your users folder. Remember that every path is now prefixed by “/Volumes/Macintosh HD/”.
 
 E.g. I had the Ruby script in a folder “EDID-Fix” on my desktop.
+
 -bash-3.2# cp -r /Volumes/Macintosh\ HD/Users/marcus/Desktop/EDID-Fix/DisplayVendorID-* /Volumes/Macintosh\ HD/System/Library/Displays/Contents/Resources/Overrides/
 
 If you only want to patch a single display be sure to adjust the command to copy only the desired folder.
 
-4.) Reboot to your system
+5.) Reboot to your system
