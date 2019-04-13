@@ -1,5 +1,10 @@
 # patch-edid
-Fork of  to Gist from https://gist.github.com/adaugherity/7435890 that allows for fix with color and flickering when attaching a Mac to a remote monitor
+Fork of Gist from https://gist.github.com/adaugherity/7435890 that forces monitor color format to RGB Full Range.
+
+Changes:
+  * Monitor name is properly extracted from the EDID data without extraneous junk at the end.
+  * Some EDID values and feature flags are parsed and displayed.
+  * Display override plist now patches the EDID instead of replacing it.  This should work properly in a multi-monitor setup.
 
 Credit to Marcus for a faster update method that avoids disabling System Integrity Protection saving a reboot.
 https://www.mathewinkson.com/2013/03/force-rgb-mode-in-mac-os-x-to-fix-the-picture-quality-of-an-external-monitor#comment-15886
@@ -18,7 +23,7 @@ Your system disk will be mounted under /Volumes/ (e.g. “/Volumes/Macintosh HD/
 
 4.) Open a terminal and copy the DisplayVendor-directory from your users folder. Remember that every path is now prefixed by “/Volumes/Macintosh HD/”.
 
-E.g. I had the Ruby script in a folder “EDID-Fix” on my desktop.
+This example assumes the script is located in a folder “EDID-Fix” on the user's the desktop.
 
 -bash-3.2# cp -r /Volumes/Macintosh\ HD/Users/marcus/Desktop/EDID-Fix/DisplayVendorID-* /Volumes/Macintosh\ HD/System/Library/Displays/Contents/Resources/Overrides/
 
