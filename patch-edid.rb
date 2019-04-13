@@ -101,8 +101,12 @@ displays.each do |disp|
     return str
   end
 
-  Dir.mkdir("DisplayVendorID-%x" % disp["vendorid"]) rescue nil
-  f = File.open("DisplayVendorID-%x/DisplayProductID-%x" % [disp["vendorid"], disp["productid"]], 'w')
+  dir = "DisplayVendorID-%x" % disp["vendorid"]
+  file = "DisplayProductID-%x" % disp["productid"]
+  puts
+  puts "Generating EDID patch: %s/%s" % [dir, file]
+  Dir.mkdir(dir) rescue nil
+  f = File.open("%s/%s" % [dir, file], 'w')
   #plist_key_value( f, sp, "IODisplayEDID", "data", Base64.strict_encode64( bytes.pack('C*') ).to_s )
   f.write <<-PLIST
 <?xml version="1.0" encoding="UTF-8"?>
