@@ -14,6 +14,103 @@
 
 require 'base64'
 
+# Show diff between two strings
+def diff( s1, s2 )
+  t = s1.chars
+  return s2.chars.map{|c| c == t.shift ? '-' : c}.join
+end
+
+# Decode EDID block
+def decode_edid( bytes )
+  puts "  EDID version #{bytes[18]}.#{bytes[19]}"
+  # color format in byte 24, bits 4-3
+  color_format = (bytes[24] & (0b11000))>>3
+  # Display type in byte 20, bit 7
+  if (bytes[20] & (0x80))>>7
+    formats = ["RGB 4:4:4", "RGB 4:4:4 + YCrCb 4:4:4", "RGB 4:4:4 + YCrCb 4:2:2", "RGB 4:4:4 + YCrCb 4:4:4 + YCrCb 4:2:2"]
+    display_type = "Digital"
+  else
+    formats = ["Monochrome or Grayscale", "RGB Color", "Non-RGB Color", "Undefined"]
+    display_type = "Analog"
+  end
+  puts "  #{display_type} input (#{formats[color_format]})"
+  # dpms features in byte 24, bits 7-5
+  if bytes[24] & (0b11100000)
+    dpms = []
+    if bytes[24] & (0b10000000)
+      dpms.push("standby")
+    end
+    if bytes[24] & (0b01000000)
+      dpms.push("suspend")
+    end
+    if bytes[24] & (0b00100000)
+      dpms.push("active-off")
+    end
+    puts "  DPMS features: #{dpms.join(', ')}"
+  end
+  # Color space in byte 24, bit 2
+  if bytes[24] & (0b00000100)
+    puts "  Standard sRGB color space"
+  end
+  if bytes[24] & (0b10)
+    puts "  Preferred timing mode specified"
+  end
+  if bytes[24] & (0b1)
+    puts "  Continuous timings with GTF or CVT"
+  end
+  # Extension blocks are 17 bytes in length beginning at byte 128
+  extension_blocks = bytes[126]
+  if extension_blocks
+    puts "  Extension blocks: #{extension_blocks}"
+    for index in (0..(extension_blocks-1))
+      offset = 128 + index * 18
+      descriptor_block = bytes[offset..(offset+18)]
+      pixel_clock = descriptor_block[1]>>8 + descriptor_block[0]
+      puts
+      print "  Extension Block #%u: " % index
+      if pixel_clock > 0
+        # Detailed Timing Descriptor block
+        puts "Detailed Timing Descriptor"
+      else
+        # Other monitor descriptor block
+        descriptor_type = descriptor_block[3]
+        descriptor_data = descriptor_block[5..17]
+        case descriptor_type
+        when 0xff
+          puts "Display Serial Number [%s]" % descriptor_data
+        when 0xfe
+          puts "Unspecified Text [%s]" % descriptor_data
+        when 0xfd
+          puts "Display Range Limits"
+        when 0xfc
+          puts "Display Name [%s]" % descriptor_data
+        when 0xfb
+          puts "Additional White Point Data"
+        when 0xfa
+          puts "Additional Standard Timing Identifiers"
+        when 0xf9
+          puts "Display Color Management"
+        when 0xf8
+          puts "CVT 3-byte Timing Codes"
+        when 0xf7
+          puts "Additional Standard Timing"
+        when 0x10
+          puts "Dummy Identifier"
+        when 0x00..0x0f # manufacturer reserved descriptors
+          puts "Manufacturer Reserved Descriptor (type 0x02x)" % descriptor_type
+          puts "    Data: %s" % descriptor_data.map{|b|"%02x "%b}.join
+        else
+          puts "Undefined Monitor Descriptor (type 0x%02x)" % descriptor_type
+          puts "    Data: %s" % descriptor_data.map{|b|"%02x "%b}.join
+        end
+      end
+    end
+  end
+
+end
+
+### MAIN
+
 data=`ioreg -l -d0 -w 0 -r -c AppleDisplay`
 
 edids=data.scan(/IODisplayEDID.*?<([a-z0-9]+)>/i).flatten
@@ -43,64 +140,43 @@ displays.each do |disp|
   end
 
   # Show some info
-  puts "Found display '#{monitor_name}': vendorid #{disp["vendorid"]}, productid #{disp["productid"]}"
   puts
-  puts "EDID version #{bytes[18]}.#{bytes[19]}"
+  puts "Found display '#{monitor_name}': vendorid #{disp["vendorid"]}, productid #{disp["productid"]}"
 
-  puts "Features:"
-  # Display type
-  if (bytes[20] & (0x80))>>7
-    display_type = "Digital"
-    formats = ["RGB 4:4:4", "RGB 4:4:4 + YCrCb 4:4:4", "RGB 4:4:4 + YCrCb 4:2:2", "RGB 4:4:4 + YCrCb 4:4:4 + YCrCb 4:2:2"]
-  else
-    display_type = "Analog"
-    formats = ["Monochrome or Grayscale", "RGB Color", "Non-RGB Color", "Undefined"]
-  end
-  color_format = (bytes[24] & (0b11000))>>3
-  puts "  #{display_type} Display (#{formats[color_format]})"
-  if bytes[24] & (0b10000000)
-    puts "  DPMS standby"
-  end
-  if bytes[24] & (0b01000000)
-    puts "  DPMS suspend"
-  end
-  if bytes[24] & (0b00100000)
-    puts "  DPMS active-off"
-  end
-  if bytes[24] & (0b00000100)
-    puts "  Standard sRGB color space"
-  end
-  puts "Number of extension blocks: #{bytes[126]}"
+  bytes[24] = 0xf8
+
+  # decode EDID block
+  puts
+  puts "Original EDID decode:"
+  decode_edid( bytes )
+  puts
+  puts "EDID data:"
+  puts disp["edid_hex"]
 
   puts
   puts "Patching EDID..."
   puts "  Setting color support to RGB 4:4:4 only"
   bytes[24] &= ~(0b11000)
-  new_color_format = (bytes[24] & (0b11000))>>3
-  puts "  New color format: #{formats[new_color_format]}"
+
+  # Recalculate EDID checksum
+  bytes[127] = (0x100-(bytes[0..126].reduce(:+) % 256)) % 256
+  puts "  Recalculated checksum: 0x%02x" % bytes[127]
 
   # Optional - remove extension block(s)
   #puts "removing extension block"
   #bytes = bytes[0..127]
   #bytes[126] = 0
 
-  # Recalculate EDID checksum
-  bytes[127] = (0x100-(bytes[0..126].reduce(:+) % 256)) % 256
-  puts "Recalculated checksum: 0x%02x" % bytes[127]
-
-  # Display old/new EDID blocks
+  puts
+  puts "Patched EDID decode:"
+  decode_edid (bytes)
+  puts
+  puts "EDID data:"
   new_edid = bytes.map{|b|"%02x"%b}.join
+  puts new_edid
   puts
-  puts "Original EDID:\n#{disp["edid_hex"]}"
-  puts
-  puts "New EDID:\n#{new_edid}"
-
-  def diff( s1, s2 )
-    t = s1.chars
-    return s2.chars.map{|c| c == t.shift ? '-' : c}.join
-  end
-  puts
-  puts "Difference:\n#{diff(disp["edid_hex"], new_edid)}"
+  puts "Difference:"
+  puts diff(disp["edid_hex"], new_edid)
 
   $tab = "\t"
   def plist_key_value( sp, key, type, value )
