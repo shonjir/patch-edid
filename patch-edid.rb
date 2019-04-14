@@ -14,6 +14,9 @@
 
 require 'base64'
 
+patch_cea = false
+full_edid = true
+
 # Show diff between two strings
 def diff( s1, s2 )
   t = s1.chars
@@ -436,19 +439,29 @@ displays.each do |disp|
 
   # Write a plist key value pair
   def plist_key_value( sp, key, type, value )
-    str =  "#{sp}<key>#{key.to_s}</key>\n"
-    str += "#{sp}<#{type}>#{value.to_s}</#{type}>"
-    return str
+    p = []
+    p.push "#{sp}<key>#{key.to_s}</key>"
+    p.push "#{sp}<#{type}>#{value.to_s}</#{type}>"
+    return p
+  end
+
+  # Write a plist multiline set
+  def plist_multi( sp, key, list )
+    p = []
+    p.push "#{sp}<#{key.to_s}>"
+    p.push list
+    p.push "#{sp}</#{key.to_s}>"
+    return p
   end
 
   # Write an edid patch stanza
-  $tab = "\t"
   def plist_edid_patch( sp, offset, bytes )
-    str = "#{sp}<dict>\n"
-    str += plist_key_value( sp + $tab, "offset", "integer", offset ) + "\n"
-    str += plist_key_value( sp + $tab, "data", "data", Base64.strict_encode64( bytes.pack('C*') ).to_s ) + "\n"
-    str += "#{sp}</dict>"
-    return str
+    p = []
+    p.push "#{sp}<dict>"
+    p.push plist_key_value( sp + "  ", "offset", "integer", offset )
+    p.push plist_key_value( sp + "  ", "data", "data", Base64.strict_encode64( bytes.pack('C*') ).to_s )
+    p.push "#{sp}</dict>"
+    return p
   end
 
   puts
@@ -456,26 +469,29 @@ displays.each do |disp|
   patches = []
   puts "  Setting digital type to RGB 4:4:4 only"
   bytes[24] &= ~(0b11000)
-  patches.push plist_edid_patch( $tab + $tab, 24, bytes[24..24] )
+  patches.push plist_edid_patch( "    ", 24, bytes[24..24] )
 
   # Recalculate EDID checksum
   bytes[127] = (0x100-(bytes[0..126].reduce(:+) % 256)) % 256
   puts "  Updated checksum: 0x%02x" % bytes[127]
 
-  # Optional - patc CEA extension block
-  extension_count = bytes[126]
-  # Iterate through extension blocks
-  for index in (0..extension_count-1)
-    offset = 128 + index*128
-    extension_tag = bytes[offset+0]
-    case extension_tag
-    when 0x02   # CEA EDID Timing Extension
-      # YCbCr support indicated in byte 3, bits 5 and 4
-      puts "  Disabling CEA Extension YCbCr flags"
-      bytes[offset+3] &= ~(0b00110000)
-      patches.push plist_edid_patch( $tab + $tab, offset+3, bytes[(offset+3)..(offset+3)] )
-      bytes[offset+127] = (0x100-(bytes[(offset+0)..(offset+126)].reduce(:+) % 256)) % 256
-      puts "  Updated checksum: 0x%02x" % bytes[offset+127]
+  # Optional - patch CEA extension block
+  if patch_cea
+    extension_count = bytes[126]
+    # Iterate through extension blocks
+    for index in (0..extension_count-1)
+      offset = 128 + index*128
+      extension_tag = bytes[offset+0]
+      case extension_tag
+      when 0x02   # CEA EDID Timing Extension
+        # YCbCr support indicated in byte 3, bits 5 and 4
+        puts "  Disabling CEA Extension YCbCr flags"
+        bytes[offset+3] &= ~(0b00110000)
+        patches.push plist_edid_patch( "    ", offset+3, bytes[(offset+3)..(offset+3)] )
+        # Recalculate extension checksum
+        bytes[offset+127] = (0x100-(bytes[(offset+0)..(offset+126)].reduce(:+) % 256)) % 256
+        puts "  Updated checksum: 0x%02x" % bytes[offset+127]
+      end
     end
   end
 
@@ -495,28 +511,31 @@ displays.each do |disp|
   puts "Difference:"
   puts diff(disp["edid_hex"], new_edid)
 
+  puts
+  puts "Generating EDID plist"
+  plist = []
+  plist.push '<?xml version="1.0" encoding="UTF-8"?>'
+  plist.push '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+  plist.push '<plist version="1.0">'
+  dict = []
+  dict.push plist_key_value( "  ", "DisplayVendorID", "integer", disp["vendorid"] )
+  dict.push plist_key_value( "  ", "DisplayProductID", "integer", disp["productid"] )
+  dict.push plist_key_value( "  ", "DisplayProductName", "string", "#{monitor_name} (RGB 4:4:4)" )
+  if full_edid
+    dict.push plist_key_value( "  ", "IODisplayEDID", "data", Base64.strict_encode64( bytes.pack('C*') ).to_s )
+  else
+    dict.push '  <key>edid-patches</key>'
+    dict.push plist_multi( "  ", "array", patches )
+  end
+  plist.push plist_multi( "", "dict", dict )
+  plist.push '</plist>'
+
   dir = "DisplayVendorID-%x" % disp["vendorid"]
   file = "DisplayProductID-%x" % disp["productid"]
-  puts
-  puts "Generating EDID patch: %s/%s" % [dir, file]
+  puts "Writing EDID Override: %s/%s" % [dir, file]
   Dir.mkdir(dir) rescue nil
   f = File.open("%s/%s" % [dir, file], 'w')
-  #plist_key_value( f, sp, "IODisplayEDID", "data", Base64.strict_encode64( bytes.pack('C*') ).to_s )
-  f.write <<-PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-#{ plist_key_value( $tab, "DisplayVendorID", "integer", disp["vendorid"] ) }
-#{ plist_key_value( $tab, "DisplayProductID", "integer", disp["productid"] ) }
-#{ plist_key_value( $tab, "DisplayProductName", "string", "#{monitor_name} (RGB 4:4:4)" ) }
-#{$tab}<key>edid-patches</key>
-#{$tab}<array>
-  #{ patches.join("\n") }
-#{$tab}</array>
-</dict>
-</plist>
-PLIST
+  f.write plist.join("\n")
   f.close
   puts "\n"
 
