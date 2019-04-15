@@ -13,26 +13,35 @@
 #   https://en.wikipedia.org/wiki/Extended_Display_Identification_Data#EDID_1.4_data_format
 
 require 'base64'
+#### PLIST CONFIG OPTIONS
+PLIST_WRITE_FULL_EDID = false
 
+# Optional text to append to DisplayProductName
+# Leave empty to add nothing
+PLIST_TAG_SHOW_OPTIONS = false
+PLIST_TAG_DEFAULT = "RGB"
+
+#### AVAILABLE OVERRIDE FLAGS
 # EDID mods
-USE_FULL_EDID = "EDID"
-SET_EDID14 = "V14"
+SET_EDID14 = "EDID14"
 SET_RGB444 = "RGB444"
-NO_SRGB = "-srgb"
-NO_EXTENSIONS = "-ext"
+NO_SRGB = "!SRGB"
+NO_EXTENSIONS = "!EXT"
 # Extension mods
-NO_CTA_VSD_HDMI = "-hdmi"
-NO_CTA_VSD_HDMI_Y444 = "-hy444"
-NO_CTA_VSD_HDMIFORUM = "-forum"
-NO_CTA_UNDERSCAN = "-und"
-NO_CTA_Y444 = "-y444"
-NO_CTA_Y422 = "-y422"
-NO_CTA_TAG_COLORIMETRY = "-color"
-NO_CTA_TAG_Y420CM = "-y420cm"
+NO_CTA_VSD_HDMI = "!HDMI"
+NO_CTA_VSD_HDMIFORUM = "!FORUM"
+NO_CTA_UNDERSCAN = "!UNDERSCAN"
+NO_CTA_YCBCR = "!YCBCR"
+NO_CTA_Y444 = "!Y444"
+NO_CTA_Y422 = "!Y422"
 
 # Override flags
-$working = [NO_CTA_VSD_HDMI]
+# Either NO_EXTENSIONS or NO_CTA_VSD_HDMI fixes color format issues on Mac
+$mac_hdmi_color_fix = [NO_CTA_VSD_HDMI]
 $overrides = [NO_CTA_VSD_HDMI]
+
+# Patch descriptors for patch generation
+# Should do this by comparing EDID block but this avoids need for intelligent diff
 $patchset = []
 
 # Show diff between two strings
@@ -114,11 +123,6 @@ def edid_decode_cta_vsd_hdmi( bytes, ptr, length, sp )
   end
   if 0 != (bytes[flags] & (0x08))
     puts sp + "DC_Y444 in deep color modes"
-    if $overrides.include? NO_CTA_VSD_HDMI_Y444
-      puts "PATCH[#{flags}]: Clearing DC_Y444 flag"
-      bytes[flags] &= ~(0x08)
-      $patchset.push ({ :byte=>flags })
-    end
   end
   if 0 != (bytes[flags] & (0b0110))
     puts sp + "Reserved"
@@ -155,7 +159,7 @@ def edid_decode_cta_vsd_hdmi_forum( bytes, ptr, length, sp )
   vsd_version = bytes[ptr+4]
   puts sp + "Version: #{vsd_version}"
   # Set to unknown OUI to disable
-  # Must disable if no HDMI block
+  # Should disable if no HDMI block
   if $overrides.include? NO_CTA_VSD_HDMIFORUM
     puts "PATCH[#{ptr+1}]: Clearing HDMI Forum block"
     for i in 1..length
@@ -258,7 +262,7 @@ def edid_decode_cta_block ( bytes, offset, sp )
   if 0 != (bytes[flags] & (0b00100000))
     puts sp + "Supports YCbCr 4:4:4"
     # YCbCr 4:4:4 support indicated in byte 3, bits 5
-    if $overrides.include? NO_CTA_Y444
+    if $overrides.include? NO_CTA_Y444 or NO_CTA_YCBCR
       puts "PATCH[#{flags}]: Clearing YCbCr 4:4:4 support"
       bytes[flags] &= ~(0b00100000)
       $patchset.push ({ :byte=>flags })
@@ -267,7 +271,7 @@ def edid_decode_cta_block ( bytes, offset, sp )
   if 0 != (bytes[flags] & (0b00010000))
     puts sp + "Supports YCbCr 4:2:2"
     # YCbCr 4:2:2 support indicated in byte 3, bits 4
-    if $overrides.include? NO_CTA_Y422
+    if $overrides.include? NO_CTA_Y422 or NO_CTA_YCBCR
       puts "PATCH[#{flags}]: Clearing YCbCr 4:2:2 support"
       bytes[flags] &= ~(0b00010000)
       $patchset.push ({ :byte=>flags })
@@ -336,14 +340,6 @@ def edid_decode_cta_block ( bytes, offset, sp )
           puts "Reserved for HDMI video data"
         when 5
           puts "Colorimetry data"
-          if $overrides.include? NO_CTA_TAG_COLORIMETRY
-            puts "PATCH[#{ptr+1}]: Clearing Colorimetry data"
-            bytes[ptr+1] = 0xff
-            for i in 2..length
-              bytes[ptr+i] = 0
-            end
-            $patchset.push ({ :range=>(ptr+1)..(ptr+length) })
-          end
         when 6
           puts "HDR static metadata"
         when 7
@@ -354,15 +350,6 @@ def edid_decode_cta_block ( bytes, offset, sp )
           puts "YCbCr 4:2:0 video data"
         when 0xf
           puts "YCbCr 4:2:0 capability map data"
-          # YCbCr 4:2:0 capability map indicate modes where YCbCr 4:2:0 may be used
-          if $overrides.include? NO_CTA_TAG_Y420CM
-            puts "PATCH[#{ptr+1}]: Clearing YCbCr 4:2:0 capability map"
-            bytes[ptr+1] = 0xff
-            for i in 2..length
-              bytes[ptr+i] = 0
-            end
-            $patchset.push ({ :range=>(ptr+1)..(ptr+length) })
-          end
         when 0x10
           puts "Reserved for CTA misc audio fields"
         when 0x11
@@ -549,14 +536,14 @@ displays.each do |disp|
   orig_edid = bytes.dup
 
   # Retrieve monitor model from EDID data
-  monitor_name=[disp["edid_hex"].match(/000000fc00((?:(?!0a)[0-9a-f][0-9a-f]){1,13})/){|m|m[1]}.to_s].pack("H*")
-  if monitor_name.empty?
-    monitor_name = "Display"
+  display_name=[disp["edid_hex"].match(/000000fc00((?:(?!0a)[0-9a-f][0-9a-f]){1,13})/){|m|m[1]}.to_s].pack("H*")
+  if display_name.empty?
+    display_name = "Display"
   end
 
   # Show some info
   puts
-  puts "Found display '#{monitor_name}': vendorid #{disp["vendorid"]}, productid #{disp["productid"]}"
+  puts "Found display '#{display_name}': vendorid #{disp["vendorid"]}, productid #{disp["productid"]}"
 
   # decode EDID block
   puts
@@ -572,7 +559,7 @@ displays.each do |disp|
     length = bytes.length
     # Truncate EDID
     bytes = bytes[0..127]
-    if $overrides.include? USE_FULL_EDID
+    if $overrides.include? PLIST_WRITE_FULL_EDID
     else
       # Zero extension block if patching
       bytes += Array.new(length - 128, 0) if length > 128
@@ -646,8 +633,10 @@ displays.each do |disp|
   end
 
   # Generate override plist
+  dir = "DisplayVendorID-%x" % disp["vendorid"]
+  file = "DisplayProductID-%x" % disp["productid"]
   puts
-  puts "Generating EDID plist"
+  puts "Writing EDID Override: %s/%s" % [dir, file]
   plist = []
   plist.push '<?xml version="1.0" encoding="UTF-8"?>'
   plist.push '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
@@ -655,11 +644,22 @@ displays.each do |disp|
   dict = []
   dict.push plist_key_value( "  ", "DisplayVendorID", "integer", disp["vendorid"] )
   dict.push plist_key_value( "  ", "DisplayProductID", "integer", disp["productid"] )
-  dict.push plist_key_value( "  ", "DisplayProductName", "string", "#{monitor_name} (%s)" % $overrides.join(',') )
-  if $overrides.include? USE_FULL_EDID
+  if PLIST_TAG_SHOW_OPTIONS
+    display_name += " (#{$overrides.join(',')})"
+  else
+    display_name += (PLIST_TAG_DEFAULT) ? " (#{PLIST_TAG_DEFAULT})" : ""
+  end
+  dict.push plist_key_value( "  ", "DisplayProductName", "string", "#{display_name}")
+  puts "  DisplayProductName: #{display_name}"
+  puts "  DisplayVendorID:    #{disp["vendorid"]}"
+  puts "  DisplayProductID:   #{disp["productid"]}"
+  if PLIST_WRITE_FULL_EDID
+    puts "  Using full EDID"
     dict.push plist_key_value( "  ", "IODisplayEDID", "data", Base64.strict_encode64( bytes.pack('C*') ).to_s )
   else
+    puts "  Using patch set"
     # generate patch set
+    dict.push '  <key>edid-patches</key>'
     patchlist = []
     $patchset.uniq.each do |p|
       p.each do |key,value|
@@ -673,22 +673,17 @@ displays.each do |disp|
         end
       end
     end
-    #patchlist.push plist_edid_patch( "    ", 128, bytes[128..(bytes.length)] )
-    #patchlist.push plist_edid_patch( "    ", 126, bytes[126..126] )
-    dict.push '  <key>edid-patches</key>'
     dict.push plist_multi( "  ", "array", patchlist )
   end
   plist.push plist_multi( "", "dict", dict )
   plist.push '</plist>'
 
-  dir = "DisplayVendorID-%x" % disp["vendorid"]
-  file = "DisplayProductID-%x" % disp["productid"]
-  puts "Writing EDID Override: %s/%s" % [dir, file]
   Dir.mkdir(dir) rescue nil
   f = File.open("%s/%s" % [dir, file], 'w')
-  f.write plist.join("\n")
+  f.write plist.join("\n") + "\n"
   f.close
-  puts "\n"
+  puts "Complete."
+  puts
 
 end   # displays.each
 
