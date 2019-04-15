@@ -8,7 +8,13 @@ do
   overrides="${mountpoint}/System/Library/Displays/Contents/Resources/Overrides/"
   if [ -d "${overrides}" ]; then
     echo "Installing EDID overrides to ${overrides}..."
-    cp -rv DisplayVendorID-* "${overrides}"
+    #cp -rv DisplayVendorID-* "${overrides}"
+    dir=$(pwd)
+    dir="${dir##${mountpoint}}"
+    find DisplayVendorID-* -type f | while read line
+    do
+      ln -vsf "${dir}/${line}" "${overrides}${line}"
+    done
   else
     echo "${mountpoint}: Not a system volume!"
   fi
