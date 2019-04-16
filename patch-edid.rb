@@ -264,7 +264,7 @@ def edid_decode_cta_block ( bytes, offset, sp )
   if 0 != (bytes[flags] & (0b00100000))
     puts sp + "Supports YCbCr 4:4:4"
     # YCbCr 4:4:4 support indicated in byte 3, bits 5
-    if $overrides.include? NO_CTA_Y444 or NO_CTA_YCBCR
+    if $overrides.include? NO_CTA_Y444 or $overrides.include? NO_CTA_YCBCR
       puts "PATCH[#{flags}]: Clearing YCbCr 4:4:4 support"
       bytes[flags] &= ~(0b00100000)
       $patchset.push ({ :byte=>flags })
@@ -273,7 +273,7 @@ def edid_decode_cta_block ( bytes, offset, sp )
   if 0 != (bytes[flags] & (0b00010000))
     puts sp + "Supports YCbCr 4:2:2"
     # YCbCr 4:2:2 support indicated in byte 3, bits 4
-    if $overrides.include? NO_CTA_Y422 or NO_CTA_YCBCR
+    if $overrides.include? NO_CTA_Y422 or $overrides.include? NO_CTA_YCBCR
       puts "PATCH[#{flags}]: Clearing YCbCr 4:2:2 support"
       bytes[flags] &= ~(0b00010000)
       $patchset.push ({ :byte=>flags })
