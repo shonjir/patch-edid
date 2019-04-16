@@ -55,11 +55,11 @@ do
 
   case "$1" in
     copy)
-      rm -vf "${target}"
+      rm -vf "${target}" 2>/dev/null
       cp -v "${source}" "${target}"
       ;;
     link)
-      rm -vf "${target}"
+      rm -vf "${target}" 2>/dev/null
       ln -vs "${source#${mountpoint}}" "${target}"
       ;;
     backup)
