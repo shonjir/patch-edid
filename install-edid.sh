@@ -26,10 +26,12 @@ fi
 case "$1" in
   copy)
     $0 backup
+    echo
     echo "Installing EDID overrides to ${overrides}..."
     ;;
   link)
     $0 backup
+    echo
     echo "Linking EDID overrides to ${overrides}..."
     ;;
   backup)
