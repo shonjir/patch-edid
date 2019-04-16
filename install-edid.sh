@@ -2,7 +2,8 @@
 # Install display overrides to mounted system volume
 
 # Source files located in script directory
-scriptdir=$(cd $(dirname $0);echo $PWD)
+scriptdir="${0%/*}"
+scriptdir=$(cd "${scriptdir}";echo $PWD)
 mountpoint=
 # scriptdir contains mountpoint when run from recovery
 case "${scriptdir}" in
@@ -25,12 +26,12 @@ fi
 
 case "$1" in
   copy)
-    $0 backup
+    "$0" backup
     echo
     echo "Installing EDID overrides to ${overrides}..."
     ;;
   link)
-    $0 backup
+    "$0" backup
     echo
     echo "Linking EDID overrides to ${overrides}..."
     ;;
@@ -64,7 +65,7 @@ do
       ;;
     backup)
       if [ -r "${target}" ]; then
-        if grep -E "(EDIDPatchOption| \(.*\)</string>)" "${target}" 1>/dev/null 2>/dev/null; then
+        if grep -E "(EDIDPatcher| \(.*\)</string>)" "${target}" 1>/dev/null 2>/dev/null; then
           echo "${file}: target patched, skipping backup"
         elif [ -r "${backup}" ]; then
           echo "${file}: backup exists, nothing to do"
