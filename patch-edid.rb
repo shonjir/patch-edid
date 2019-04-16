@@ -533,6 +533,9 @@ if displays.length > 1
 end
 displays.each do |disp|
 
+  # Initialize patchset array
+  $patchset = []
+
   # Translate EDID to byte array
   bytes = disp["edid_hex"].scan(/../).map{|x|Integer("0x#{x}")}.flatten
   orig_edid = bytes.dup
