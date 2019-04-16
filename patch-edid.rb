@@ -16,10 +16,12 @@ require 'base64'
 #### PLIST CONFIG OPTIONS
 PLIST_WRITE_FULL_EDID = false
 
-# Optional text to append to DisplayProductName
-# Leave empty to add nothing
-PLIST_TAG_SHOW_OPTIONS = false
-PLIST_TAG_DEFAULT = "RGB"
+# Control modifications to DisplayProductName
+PLIST_NAME_ADD_SUFFIX = false
+# Use overrides as suffix
+PLIST_NAME_FROM_OVERRIDES = false
+# Default name suffix
+PLIST_DEFAULT_SUFFIX = "RGB"
 
 #### AVAILABLE OVERRIDE FLAGS
 # EDID mods
@@ -642,12 +644,16 @@ displays.each do |disp|
   plist.push '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
   plist.push '<plist version="1.0">'
   dict = []
+  dict.push plist_key_value( "  ", "EDIDPatcherOptionString", "string", $overrides.join(',') )
+  dict.push plist_key_value( "  ", "EDIDPatcherCreationTimestamp", "string", Time.now.inspect )
   dict.push plist_key_value( "  ", "DisplayVendorID", "integer", disp["vendorid"] )
   dict.push plist_key_value( "  ", "DisplayProductID", "integer", disp["productid"] )
-  if PLIST_TAG_SHOW_OPTIONS
-    display_name += " (#{$overrides.join(',')})"
-  else
-    display_name += (PLIST_TAG_DEFAULT) ? " (#{PLIST_TAG_DEFAULT})" : ""
+  if PLIST_NAME_ADD_SUFFIX
+    if PLIST_NAME_FROM_OVERRIDES
+      display_name += " (#{$overrides.join(',')})"
+    else
+      display_name += (PLIST_DEFAULT_SUFFIX) ? " (#{PLIST_DEFAULT_SUFFIX})" : ""
+    end
   end
   dict.push plist_key_value( "  ", "DisplayProductName", "string", "#{display_name}")
   puts "  DisplayProductName: #{display_name}"
