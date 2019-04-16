@@ -72,6 +72,8 @@ do
         else
           mv -vf "${target}" "${backup}"
         fi
+      else
+        echo "${file}: not found, nothing to do"
       fi
       ;;
     restore)
