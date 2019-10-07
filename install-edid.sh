@@ -35,13 +35,16 @@ case "$1" in
     echo
     echo "Linking EDID overrides to ${overrides}..."
     ;;
+  show)
+    echo "Listing installed EDID overrides..."
+    ;;
   backup)
     echo "Backing up EDID overrides..."
     ;;
   restore)
     echo "Restoring EDID overrides from backup..."
     ;;
-  *) echo "Usage: $0 [copy|link|backup|restore]" ; exit 1 ;;
+  *) echo "Usage: $0 [copy|link|show|backup|restore]" ; exit 1 ;;
 esac
 
 # Try installing overrides...
@@ -63,6 +66,20 @@ do
       rm -f "${target}" 2>/dev/null
       ln -vs "${source#${mountpoint}}" "${target}"
       ;;
+    show)
+      # Similar to backup, but only shows status
+      if [ -r "${target}" ]; then
+        if grep -E "(EDIDPatcher| \(.*\)</string>)" "${target}" 1>/dev/null 2>/dev/null; then
+          echo "${file}: target is patched"
+        elif [ -r "${backup}" ]; then
+          echo "${file}: backup exists"
+        else
+          echo "${file}: target is not patched"
+        fi
+      else
+        echo "${file}: target does not exist"
+      fi
+      ;;
     backup)
       if [ -r "${target}" ]; then
         if grep -E "(EDIDPatcher| \(.*\)</string>)" "${target}" 1>/dev/null 2>/dev/null; then
@@ -80,7 +97,11 @@ do
       if [ -r "${backup}" ]; then
         mv -vf "${backup}" "${target}"
       else
-        echo "${file}: backup not found, nothing to do"
+        # assumes that there was no original target
+        echo "${file}: backup not found, removing target"
+        rm -vf "${target}"
+        # Try removing empty source directory
+        rmdir "${sourcedir}"
       fi
       ;;
   esac
