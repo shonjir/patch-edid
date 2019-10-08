@@ -54,6 +54,7 @@ do
   file="${source#${scriptdir}/}"
   target="${overrides}/${file}"
   backup="${overrides}/${file}.backup"
+  targetdir="${target%/*}"
 
   mkdir -p "${sourcedir}"
 
@@ -100,8 +101,8 @@ do
         # assumes that there was no original target
         echo "${file}: backup not found, removing target"
         rm -vf "${target}"
-        # Try removing empty source directory
-        rmdir "${sourcedir}"
+        # Try removing empty target directory
+        rmdir "${targetdir}"
       fi
       ;;
   esac
